@@ -1,0 +1,82 @@
+name: CI/CD Apache 30100 (K8s Manifests)
+
+on:
+  push:
+    tags:
+
+
+jobs:
+  build-and-push:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1 – Descargar el código
+        uses: actions/checkout@v4
+
+      - name: 2 – Iniciar sesión en Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 3 – Armar la imagen y publicarla
+        run: |
+          IMAGE_NAME="apache-custom"
+          IMAGEN_COMPLETA="${{ secrets.DOCKER_USERNAME }}/${IMAGE_NAME}"
+          IMAGE_TAG="${{ github.ref_name }}"
+
+          docker build \
+            -t "${IMAGEN_COMPLETA}:${IMAGE_TAG}" \
+            -t "${IMAGEN_COMPLETA}:latest" \
+            .
+
+          docker push --all-tags "${IMAGEN_COMPLETA}"
+
+  deploy:
+    name: Deploy to K3s EC2
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código (para obtener manifiestos)
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ vars.K3S_SERVER_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.EA2_SSH_PRIVATE_KEY }}
+          # Pasamos los manifiestos como archivos temporales o mediante cat
+          script: |
+            # Definir la imagen con el tag del evento actual
+            FULL_IMAGE="${{ secrets.DOCKER_USERNAME }}/apache-custom:${{ github.ref_name }}"
+            
+            # Crear directorio temporal para el deploy si no existe
+            mkdir -p ~/deploy-apache
+
+          # Copiamos los archivos a la instancia antes de ejecutar kubectl
+      - name: Transferir manifiestos a la EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ vars.K3S_SERVER_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.EA2_SSH_PRIVATE_KEY }}
+          source: "k8s/*.yml"
+          target: "~/deploy-apache/"
+          strip_components: 1
+
+      - name: Aplicar manifiestos en K3s
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ vars.K3S_SERVER_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.EA2_SSH_PRIVATE_KEY }}
+          script: |
+            FULL_IMAGE="${{ secrets.DOCKER_USERNAME }}/apache-custom:${{ github.ref_name }}"
+            
+            # Reemplazar el placeholder de la imagen en el archivo deployment.yml
+            sed -i "s|IMAGE_PLACEHOLDER|$FULL_IMAGE|g" ~/deploy-apache/deployment.yml
+            
+            # Aplicar los manifiestos
+            sudo kubectl apply -f ~/deploy-apache/deployment.yml
+            sudo kubectl apply -f ~/deploy-apache/service.yml
