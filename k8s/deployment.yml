@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apache-30100
+  labels:
+    app: apache-30100
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: apache-30100
+  template:
+    metadata:
+      labels:
+        app: apache-30100
+    spec:
+      containers:
+        - name: apache
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 30100
