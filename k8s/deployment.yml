@@ -2,10 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: apache-30100
-  labels:
-    app: apache-30100
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate # Evita que el servicio caiga durante la actualización
   selector:
     matchLabels:
       app: apache-30100
@@ -20,3 +20,17 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 30100
+          # Pruebas de vida: Si esto falla, K8s reinicia el contenedor automáticamente
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 30100
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Pruebas de disponibilidad: No envía tráfico hasta que el puerto responda
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 30100
+            initialDelaySeconds: 5
+            periodSeconds: 5
