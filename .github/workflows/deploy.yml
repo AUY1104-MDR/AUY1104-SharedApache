@@ -66,5 +66,4 @@ jobs:
             echo "Esperando a que el pod esté en estado Ready..."
             sudo kubectl rollout status deployment/apache-30100 --timeout=60s
             
-            # 4. LIMPIEZA: Borrar imágenes huérfanas en la EC2 para no llenar el disco del Lab
-            sudo docker image prune -f
+           
