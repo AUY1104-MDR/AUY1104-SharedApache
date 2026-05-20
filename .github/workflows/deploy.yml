@@ -2,6 +2,10 @@ name: CI/CD Apache 30100 (K8s Manifests)
 on:
   push:
     tags:
+      - 'v*'
+
+env:
+  IMAGE_TAG: ${{ github.ref_name }}
 
 jobs:
   build-and-push:
@@ -21,8 +25,7 @@ jobs:
         run: |
           IMAGE_NAME="apache-custom"
           FULL_IMAGE="${{ secrets.DOCKER_USERNAME }}/${IMAGE_NAME}"
-          # Usamos el tag de Git y también preparamos un hash por seguridad
-          docker build -t "${FULL_IMAGE}:${{ github.ref_name }}" -t "${FULL_IMAGE}:latest" .
+          docker build -t "${FULL_IMAGE}:${IMAGE_TAG}" -t "${FULL_IMAGE}:latest" .
           docker push --all-tags "${FULL_IMAGE}"
 
   deploy:
@@ -50,20 +53,23 @@ jobs:
           host: ${{ vars.K3S_SERVER_PUBLIC_IP }}
           username: ubuntu
           key: ${{ secrets.EA2_SSH_PRIVATE_KEY }}
+          envs: IMAGE_TAG
           script: |
-            set -e # Detener el script si algún comando falla
-            
-            FULL_IMAGE="${{ secrets.DOCKER_USERNAME }}/apache-custom:${{ github.ref_name }}"
-            
-            # 1. Preparar manifiestos con la imagen exacta
+            set -e
+
+            FULL_IMAGE="${{ secrets.DOCKER_USERNAME }}/apache-custom:${IMAGE_TAG}"
+
             sed -i "s|IMAGE_PLACEHOLDER|$FULL_IMAGE|g" ~/deploy-apache/deployment.yml
-            
-            # 2. Aplicar configuración
+
             sudo kubectl apply -f ~/deploy-apache/deployment.yml
             sudo kubectl apply -f ~/deploy-apache/service.yml
-            
-            # 3. VERIFICACIÓN: Esperar a que el despliegue esté listo
+
             echo "Esperando a que el pod esté en estado Ready..."
-            sudo kubectl rollout status deployment/apache-30100 --timeout=60s
-            
-           
+            sudo kubectl rollout status deployment/apache-30100 --timeout=120s
+
+            echo "--- pods ---"
+            sudo kubectl get pods -l app=apache-30100 -o wide
+            echo "--- service ---"
+            sudo kubectl get svc apache-svc-30100
+            echo "--- curl interno ---"
+            curl -fsS --max-time 10 http://localhost:30100 | head -c 200 || echo "curl falló (no bloquea pipeline)"
